@@ -1,5 +1,15 @@
 import { interpret, Machine, assign } from "xstate";
 
+
+interface TSchema {
+    states: {
+        lot: {},
+        part: {},
+        quantity: {},
+        ready: {},
+        done: {}
+    }
+}
 interface TContext {
     lotNo: string
     partNo: string
@@ -8,8 +18,8 @@ interface TContext {
         bomQuantity: number
         shipQuantity: number
         receivedQuantity: number
-    }
-
+    },
+    error: string
 }
 
 type TEvents =
@@ -29,13 +39,21 @@ function valid_LotNo(context: TContext, event) {
     return valid
 }
 
-function valid_PartNo(context: TContext, event) {
+ function valid_PartNo(context: TContext, event) {
     let valid =  event.data === test_data.partNo
     return valid
 }
 
-function valid_Quantity(context: TContext, event) {
+ function valid_Quantity(context: TContext, event) {
     return event.data >= 0
+}
+
+async function save(ctx: TContext) {
+    await Promise.resolve('yyya')
+    if (Math.random() > 0.2) {
+        return Promise.resolve('saved')
+    }
+    return Promise.reject('error saving')
 }
 
 const clearData = assign({
@@ -46,13 +64,14 @@ const clearData = assign({
         bomQuantity: 0,
         shipQuantity: 0,
         receivedQuantity: 0
-    }
+    },
+    error: ''
 })
 
 
-const rcvMachine = Machine<TContext, any, TEvents>(
+const rcvMachine = Machine<TContext, TSchema, TEvents>(
     {
-        id: 'glass',
+        id: 'receive-lot-part',
         // the initial context (extended state) of the statechart
         context: {
             lotNo: "",
@@ -62,14 +81,15 @@ const rcvMachine = Machine<TContext, any, TEvents>(
                 bomQuantity: 0,
                 shipQuantity: 0,
                 receivedQuantity: 0
-            }
+            },
+            error: ''
         },
-        initial: 'idle',
+        initial: 'lot',
         states: {
-            idle: {
+            lot: {
                 on: {
                     INPUT: {
-                        target: 'lotNo',
+                        target: 'part',
                         cond: valid_LotNo,
                         actions: [assign({
                             lotNo: (ctx, evt) => evt.data as string
@@ -77,10 +97,10 @@ const rcvMachine = Machine<TContext, any, TEvents>(
                     }
                 }
             },
-            lotNo: {
+            part: {
                 on: {
                     INPUT: {
-                        target: 'partNo',
+                        target: 'quantity',
                         cond: valid_PartNo,
                         actions: [assign({
                             partNo: (ctx, evt) => evt.data as string
@@ -88,42 +108,42 @@ const rcvMachine = Machine<TContext, any, TEvents>(
 
                     },
                     RESET: {
-                        target: 'idle',
-                        actions: [clearData]
-                    }
-                }
-            },
-            partNo: {
-                on: {
-                    INPUT: {
-                        target: 'partNo',
-                        cond: valid_Quantity,
-                        actions: [assign({
-                            quantity: (ctx, evt) => evt.data as number
-                        })]
-                    },
-                    RESET: {
-                        target: 'idle',
+                        target: 'lot',
                         actions: [clearData]
                     }
                 }
             },
             quantity: {
                 on: {
-                    SAVE: {
-
+                    INPUT: {
+                        target: 'ready',
+                        cond: valid_Quantity,
+                        actions: [assign({
+                            quantity: (ctx, evt) => evt.data as number
+                        })]
                     },
                     RESET: {
-                        target: 'idle',
+                        target: 'lot',
                         actions: [clearData]
                     }
-
                 }
+            },
+            ready: {
+                on: {
+                    SAVE: {
+                        target: 'ready',
+                    },
+                    RESET: {
+                        target: 'lot',
+                        actions: [clearData]
+                    }
+                }
+            },
+            done: {
+                type: 'final'
             }
         }
-    }, {
-
-},
+    }
 );
 
 const service = interpret(rcvMachine).onTransition(cur => {
@@ -134,4 +154,4 @@ const service = interpret(rcvMachine).onTransition(cur => {
 service.send('INPUT', { data: 'BP0001' })
 service.send('INPUT', { data: 'PT1' })
 service.send('INPUT', { data: 5 })
-service.send('RESET')
+service.send('SAVE')
