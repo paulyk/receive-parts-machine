@@ -6,7 +6,8 @@ interface TSchema {
         lot: {},
         part: {},
         quantity: {},
-        ready: {},
+        saving: {},
+        error: {},
         done: {}
     }
 }
@@ -39,12 +40,12 @@ function valid_LotNo(context: TContext, event) {
     return valid
 }
 
- function valid_PartNo(context: TContext, event) {
-    let valid =  event.data === test_data.partNo
+function valid_PartNo(context: TContext, event) {
+    let valid = event.data === test_data.partNo
     return valid
 }
 
- function valid_Quantity(context: TContext, event) {
+function valid_Quantity(context: TContext, event) {
     return event.data >= 0
 }
 
@@ -116,7 +117,7 @@ const rcvMachine = Machine<TContext, TSchema, TEvents>(
             quantity: {
                 on: {
                     INPUT: {
-                        target: 'ready',
+                        target: 'saving',
                         cond: valid_Quantity,
                         actions: [assign({
                             quantity: (ctx, evt) => evt.data as number
@@ -128,15 +129,26 @@ const rcvMachine = Machine<TContext, TSchema, TEvents>(
                     }
                 }
             },
-            ready: {
-                on: {
-                    SAVE: {
-                        target: 'ready',
+            saving: {
+                invoke: {
+                    id: 'save',
+                    src: (ctx, e) => save(ctx),
+                    onDone: {
+                        target: 'done',
+                        actions: [(ctx, evt) => {
+                            console.log('done', evt)
+                            return ctx
+                        }]
                     },
-                    RESET: {
-                        target: 'lot',
-                        actions: [clearData]
+                    onError: {
+                        target: 'error',
+                        actions: [assign({ error: 'something broke'})]
                     }
+                }
+            },
+            error: {
+                on: {
+                    SAVE: 'saving'
                 }
             },
             done: {
